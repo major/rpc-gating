@@ -1,0 +1,90 @@
+- job:
+    name: RE-Release
+    project-type: pipeline
+    pipeline-scm:
+      scm:
+        - git:
+            url: https://github.com/rcbops/rpc-gating
+            branches:
+              - "${RPC_GATING_BRANCH}"
+            credentials-id: "github_account_rpc_jenkins_svc"
+      script-path: job_dsl/release.groovy
+    concurrent: false
+    properties:
+      - build-discarder:
+          num-to-keep: 30
+    parameters:
+      - rpc_gating_params
+      - text:
+          name: COMMAND
+          default: |
+            # the following parameters must be replaced with your values:
+            # REPO - the repo containing the project to be release
+            # SCRIPT - a script to execute to generate release notes
+            # VERSION - the version to release
+            # PREVIOUS_VERSION - Used as base version for generating release notes
+            # NOTIFICATION_ADDRESS - where to send release notifications
+            python rpc-gating/scripts/release.py \
+                --debug \
+                --org rcbops \
+                --repo REPO \
+                clone \
+                  --ref master-rc \
+                generate_release_notes \
+                    --script "SCRIPT" \
+                    --prev-version "PREVIOUS_VERSION" \
+                create_release \
+                    --version VERSION \
+                update_rc_branch \
+                    --mainline master \
+                mail \
+                    --to NOTIFICATION_ADDRESS
+          description: |
+            Commands and available options.
+              Note that options that are also used
+              by a subsequent command are passed internally.
+
+              <br>generate_release_notes:<br>
+                --script TEXT        Execute this script to generate release notes.<br>
+                --file TEXT          Read release notes from this file.<br>
+                --text TEXT          Text of the release notes.<br>
+                --ref TEXT           Ref that will be released. Release notes scripts<br>
+                                     compare from --prev-version to --ref.<br>
+                --prev-version TEXT  Last released version. Release notes scripts should<br>
+                                     compare prev-version to ref<br>
+                --help               Show this message and exit.<br>
+              <br>add_issue_url_to_pr:<br>
+                --pull-request-number TEXT  Pull request to update  [required]<br>
+                --issue-key TEXT            Issue being resolved by pull request  [required]<br>
+                --help                      Show this message and exit.<br>
+              <br>clone:<br>
+                --url TEXT<br>
+                --ref TEXT      ref to checkout<br>
+                --refspec TEXT  refspec to fetch<br>
+                --help          Show this message and exit.<br>
+              <br>create_issue:<br>
+                --tag TEXT    Jenkins build tag  [required]<br>
+                --link TEXT   Link to related build in Jenkins UI  [required]<br>
+                --label TEXT  Add label to issue, can be specified multiple times<br>
+                              [required]<br>
+                --help        Show this message and exit.<br>
+              <br>usage:<br>
+                --help  Show this message and exit.<br>
+              <br>update_rc_branch:<br>
+                Update rc branch.<br>
+                1. Store branch protection data 2. Delete rc branch 3. Create rc branch<br>
+                from head of mainline 4. Enable branch protection with skeleton or<br>
+                previously stored settings.<br>
+                --mainline TEXT  Mainline branch to cut from  [required]<br>
+                --rc TEXT        Release Candidate branch (re)create<br>
+                --help           Show this message and exit.<br>
+              <br>create_release:<br>
+                --version TEXT   version to release  [required]<br>
+                --ref TEXT       Reference to create release from (branch, SHA etc)<br>
+                --body FILENAME  File containing release message body<br>
+                --help           Show this message and exit.<br>
+              <br>mail:<br>
+                --to TEXT<br>
+                --subject TEXT<br>
+                --body TEXT<br>
+                --help          Show this message and exit.<br>
