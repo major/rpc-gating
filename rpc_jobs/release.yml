@@ -1,0 +1,68 @@
+- job:
+    name: RE-Release
+    project-type: workflow
+    concurrent: false
+    properties:
+      - build-discarder:
+          num-to-keep: 30
+    parameters:
+      - rpc_gating_params
+      - string:
+          name: RELEASE_VERSION
+          description: |
+            The version that will be tagged by this job
+      - string:
+          name: NEXT_VERSION
+          description: |
+            The version that will be released after the next stabalisation
+            period.
+      - string:
+          name: MAINLINE
+          description: The mainline branch to work from
+      - string:
+          name: REPO_URL
+          description: |
+            URL of the working repo. Used to pull and push, so should be
+            git@github.com:owner/repo. Key for
+            https://github.com/rpc-jenkins-svc is used for pushing.
+      - string:
+          name: STAGES
+          description: |
+            Items to run. Options:
+              Tag,
+              Update RC Branch
+          default: >-
+            Tag,
+            Update RC Branch
+    dsl: |
+      stage("Check Parameters"){
+        if (env.REPO_URL == "" || env.MAINLINE == ""){
+          throw new Exception(
+            "REPO_URL and MAINLINE parameters are required.")
+        }
+        if (!(REPO_URL ==~ /git@github.com:[\w-_]*\/[\w-_]*/)){
+          throw new Exception(
+            "Repo url should be of the form git@github.com:owner/repo")
+        }
+        print ("Parameter check successful.")
+      }
+      library "rpc-gating@${RPC_GATING_BRANCH}"
+      common.shared_slave(){
+        rc = "${MAINLINE}-rc"
+        stage("Configure Git"){
+          release.configure_git()
+        }
+        stage("Clone"){
+          release.clone(REPO_URL)
+        }
+        common.conditionalStage(
+          stage_name: "Tag",
+          stage: {
+            release.tag(RELEASE_VERSION, rc)
+          })
+        common.conditionalStage(
+          stage_name: "Update RC Branch",
+          stage: {
+            release.update_rc_branch(REPO_URL, MAINLINE, rc)
+          })
+      }
