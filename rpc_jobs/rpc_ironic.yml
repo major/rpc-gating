@@ -1,0 +1,137 @@
+- project:
+    name: 'RPC-AIO-Ironic-Jobs'
+    series:
+      - newton:
+          branch: newton
+          branches: "newton"
+    image:
+      - trusty:
+          IMAGE: "Ubuntu 14.04.5 LTS prepared for RPC deployment"
+      - xenial:
+          IMAGE: "Ubuntu 16.04.2 LTS prepared for RPC deployment"
+    scenario:
+      - multihypervisor
+    ztrigger:
+      - periodic:
+          branches: "do_not_build_on_pr"
+          NUM_TO_KEEP: 10
+          CRON: "H H(0-8) * * 1-5"
+      - pr:
+          CRON: ""
+          NUM_TO_KEEP: 30
+    jobs:
+      - 'RPC-Ironic-AIO_{series}-{image}-{scenario}-{ztrigger}'
+
+- job-template:
+    name: 'RPC-Ironic-AIO_{series}-{image}-{scenario}-{ztrigger}'
+    project-type: workflow
+    concurrent: true
+    properties:
+      - build-discarder:
+          num-to-keep: "{NUM_TO_KEEP}"
+      - rpc-openstack-github
+    parameters:
+      # See params.yml
+      - rpc_repo_params:
+          RPC_BRANCH: "{branch}"
+      - text:
+          name: "USER_VARS"
+          default: |
+            tempest_plugins:
+              - name: ironic-tempest-plugin
+                package: ironic
+            tempest_service_available_ironic: True
+            tempest_test_sets: defcore ironic_api
+          description: "OSA/RPC USER_VARS to inject for this build"
+      - string:
+          name: "DEPLOY_ELK"
+          default: "{DEPLOY_ELK}"
+          description: "Deploy ELK? yes/no"
+      - kibana_selenium_params:
+          KIBANA_SELENIUM_BRANCH: "{branch}"
+      - rpc_gating_params
+      - instance_params:
+          IMAGE: "{IMAGE}"
+          FLAVOR: "{FLAVOR}"
+          REGION: "{REGION}"
+      - string:
+          name: STAGES
+          default:  >-
+           Allocate Resources,
+           Connect Slave,
+           Prepare Deployment,
+           Deploy RPC w/ Script,
+           Install Tempest,
+           Tempest Tests,
+           Cleanup,
+           Destroy Slave
+          description: |
+            Pipeline stages to run CSV. Note that this list does not influence execution order.
+            Options:
+              Allocate Resources
+              Connect Slave
+              Prepare Deployment
+              Deploy RPC w/ Script
+              Install Tempest
+              Tempest Tests
+              Pause (use to hold instance for investigation before cleanup)
+              Cleanup
+              Destroy Slave
+    triggers:
+      - timed: "{CRON}"
+      - github-pull-request:
+          org-list:
+            - rcbops
+          github-hooks: true
+          trigger-phrase: '.*recheck_cit_{image}_ironic_{scenario}.*'
+          only-trigger-phrase: true
+          white-list-target-branches:
+            - "{branches}"
+          auth-id: "github_account_rpc_jenkins_svc"
+          status-context: 'CIT/{image}-ironic-{scenario}'
+          cancel-builds-on-update: true
+
+    dsl: |
+      library "rpc-gating@${{RPC_GATING_BRANCH}}"
+      currentBuild.result = 'SUCCESS'
+      env.SCENARIO = "ironic"
+      env.TRIGGER = "{ztrigger}"
+      env.TARGET = "aio"
+      env.ACTION = "deploy"
+      env.SERIES = "{series}"
+      timeout(time: 8, unit: 'HOURS'){{
+        common.shared_slave() {{
+          try {{
+            common.prepareRpcGit("auto", env.WORKSPACE)
+            if(common.is_doc_update_pr("${{env.WORKSPACE}}/rpc-openstack")){{
+              return
+            }}
+            pubcloud.runonpubcloud {{
+              try {{
+                env.DEPLOY_IRONIC="yes"
+                environment_vars = [
+                  "DEPLOY_HAPROXY=yes",
+                  "DEPLOY_TEMPEST=no",
+                  "DEPLOY_SWIFT=yes",
+                  "DEPLOY_CEPH=no",
+                  "DEPLOY_ELK=${{DEPLOY_ELK}}",
+                  "DEPLOY_IRONIC=yes",
+                ]
+                aio_prepare.prepare()
+                deploy.deploy_sh(environment_vars: environment_vars)
+                tempest.tempest()
+                kibana.kibana(env.KIBANA_SELENIUM_BRANCH)
+              }} catch (e) {{
+                print(e)
+                currentBuild.result = 'FAILURE'
+                throw e
+              }} finally {{
+                common.archive_artifacts()
+                common.safe_jira_comment("${{currentBuild.result}}: [${{env.BUILD_TAG}}|${{env.BUILD_URL}}]")
+              }}
+            }} //pubcloud slave
+          }} finally {{
+            common.delete_workspace()
+          }}
+        }} // cit node
+      }} // timeout
