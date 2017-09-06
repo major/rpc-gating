@@ -1,0 +1,49 @@
+- job:
+    name: Cloud-Image-Build
+    project-type: workflow
+    concurrent: true
+    properties:
+      - build-discarder:
+          num-to-keep: 30
+    parameters:
+      - instance_params:
+          IMAGE: "Ubuntu 16.04 LTS (Xenial Xerus) (PVHVM)"
+          FLAVOR: "performance1-1"
+          REGION: "DFW"
+      - rpc_gating_params:
+          RPC_GATING_BRANCH: "odyssey4me/RE-279"
+      - string:
+          name: STAGES
+          default: "Allocate Resources, Save Slave, Cleanup"
+          description: |
+            Pipeline stages to run CSV. Note that this list does not influence execution order.
+            Options:
+              Allocate Resources
+              Save Slave
+              Cleanup
+      - string:
+          name: SAVE_IMAGE_NAME
+          default: "testjp1"
+          description: "The name to use for the saved image."
+    dsl: |
+      library "rpc-gating@${RPC_GATING_BRANCH}"
+      common.shared_slave(){
+        inventory="inventory.${common.rand_int_str()}"
+        inventory_path="${WORKSPACE}/rpc-gating/playbooks/${inventory}"
+        String instance_name = common.gen_instance_name()
+        try{
+          stage("Build Instance"){
+            pubcloud.getPubCloudSlave(instance_name: instance_name)
+          }
+          stage("Save Image"){
+            pubcloud.savePubCloudSlave(instance_name: instance_name)
+          }
+        } catch (e){
+          print(e)
+          throw e
+        } finally {
+          stage("Remove Instance"){
+            pubcloud.delPubCloudSlave(instance_name: instance_name)
+          }
+        }
+      }
