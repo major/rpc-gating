@@ -92,5 +92,34 @@ def add_issue_url_to_pr(repo, pull_request_number, issue_key):
             raise Exception("There was a failure updating the pull request.")
 
 
+@cli.command()
+@click.pass_obj
+@click.option(
+    '--source-branch',
+    help="Branch that contains the changes to propose",
+    required=True
+)
+@click.option(
+    '--target-branch',
+    help="Branch that changes should be proposed to",
+    required=True
+)
+@click.option(
+    '--title',
+    help="Title of the pull request",
+    required=True
+)
+@click.option(
+    '--body',
+    help="Body of the pull request",
+    required=True
+)
+def create_pr(repo, source_branch, target_branch, title, body):
+    repo.create_pull(title=title,
+                     base=target_branch,
+                     head=source_branch,
+                     body=body)
+
+
 if __name__ == "__main__":
     cli()

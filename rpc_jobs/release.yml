@@ -20,11 +20,15 @@
           name: MAINLINE
           description: The mainline branch to work from
       - string:
-          name: REPO_URL
+          name: REPO_NAME
           description: |
-            URL of the working repo. Used to pull and push, so should be
-            git@github.com:owner/repo. Key for
-            https://github.com/rpc-jenkins-svc is used for pushing.
+            Name of the working github repo. The rpc-jenkins-svc github user
+            must have push access to this repo.
+      - string:
+          name: ORG_NAME
+          description: |
+            Name of the Organisation or user that owns REPO_NAME.
+          default: rcbops
       - string:
           name: STAGES
           description: |
@@ -33,36 +37,63 @@
               Update RC Branch
           default: >-
             Tag,
-            Update RC Branch
+            Update RC Branch,
+            Post RC-cut branch update
     dsl: |
       stage("Check Parameters"){
-        if (env.REPO_URL == "" || env.MAINLINE == ""){
+        if (env.REPO_NAME == "" || env.ORG_NAME == "" || env.MAINLINE == ""){
           throw new Exception(
-            "REPO_URL and MAINLINE parameters are required.")
-        }
-        if (!(REPO_URL ==~ /git@github.com:[\w-_]*\/[\w-_]*/)){
-          throw new Exception(
-            "Repo url should be of the form git@github.com:owner/repo")
+            "REPO_NAME, ORG_NAME and MAINLINE parameters are required.")
         }
         print ("Parameter check successful.")
       }
       library "rpc-gating@${RPC_GATING_BRANCH}"
       common.shared_slave(){
+        repo_url="git@github.com:${owner}/${repo}"
         rc = "${MAINLINE}-rc"
         stage("Configure Git"){
           release.configure_git()
         }
         stage("Clone"){
-          release.clone(REPO_URL)
+          release.clone(repo_url)
         }
         common.conditionalStage(
-          stage_name: "Tag",
-          stage: {
-            release.tag(RELEASE_VERSION, rc)
-          })
+          stage_name: "Pre RC-cut branch update",
+          stage: {{
+              release.branch_update_script(
+                "scripts/pre_rc_cut.sh",
+                env.NEXT_VERSION,
+                env.MAINLINE,
+                "Pre_RC_cut",
+                env.REPO_NAME,
+                env.ORG_NAME
+
+              )
+            }}
+        )
         common.conditionalStage(
-          stage_name: "Update RC Branch",
-          stage: {
-            release.update_rc_branch(REPO_URL, MAINLINE, rc)
-          })
-      }
+          stage_name: "Tag",
+          stage: {{
+            release.tag(RELEASE_VERSION, rc)
+          }}
+        )
+        common.conditionalStage(
+          stage_name: "Reset RC Branch",
+          stage: {{
+            release.reset_rc_branch(repo_url, MAINLINE, rc)
+          }}
+        )
+        common.conditionalStage(
+          stage_name: "Post RC-cut branch update",
+          stage: {{
+              release.branch_update_script(
+                "scripts/post_rc_cut.sh",
+                env.NEXT_VERSION,
+                env.MAINLINE,
+                "Post_RC_cut",
+                env.REPO_NAME,
+                env.ORG_NAME
+              )
+            }}
+        )
+      }}

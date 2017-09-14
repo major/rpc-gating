@@ -71,5 +71,28 @@ void add_issue_url_to_pr(String upstream="upstream"){
   return null
 }
 
+void create_pr(repo, org, source_branch, target_branch, title, body){
+  withCredentials([
+    string(
+      credentialsId: 'rpc-jenkins-svc-github-pat',
+      variable: 'pat'
+    )
+  ]){
+    sh """#!/bin/bash -xe
+      cd $env.WORKSPACE
+      set +x; . .venv/bin/activate; set -x
+      python rpc-gating/scripts/ghutils.py\
+        --org '$org' \
+        --repo '$repo' \
+        --pat '$pat' \
+        create_pr \
+        --source-branch ${source-branch} \
+        --target-branch ${target-branch} \
+        --title "${title}" \
+        --body "${body}"
+    """
+  }
+}
+
 
 return this;
