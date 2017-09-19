@@ -79,6 +79,15 @@
                     default_volume_type: ceph
             cinder_service_backup_driver: cinder.backup.drivers.ceph
             tempest_service_available_swift: false
+      - ironic-multihypervisor:
+          DEPLOY_IRONIC: "yes"
+          TRIGGER_PR_PHRASE_ONLY: true
+          CONTEXT_USER_VARS: |
+            tempest_plugins:
+              - name: ironic-tempest-plugin
+                package: ironic
+            tempest_service_available_ironic: True
+            tempest_test_sets: defcore ironic_api
 
     # NOTE: Hugh tested this and found that ztrigger overrides series and
     #       trigger doesn't, which is odd because both trigger and ztrigger
@@ -180,6 +189,20 @@
       # Ocata onwards.
       - series: master
         image: trusty
+      # Ironic builds are not supported for series before newton
+      # and currently not tested with upgrades.
+      - series: mitaka
+        scenario: ironic-multihypervisor
+      - series: liberty
+        scenario: ironic-multihypervisor
+      - series: kilo
+        scenario: ironic-multihypervisor
+      - action: leapfrogupgrade
+        scenario: ironic-multihypervisor
+      - action: majorupgrade
+        scenario: ironic-multihypervisor
+      - action: leapfrogupgrade
+        scenario: ironic-multihypervisor
     jobs:
       - 'RPC-AIO_{series}-{image}-{action}-{scenario}-{ztrigger}'
 
@@ -198,8 +221,10 @@
     NUM_TO_KEEP: 30
     IMAGE: "Ubuntu 14.04.5 LTS prepared for RPC deployment"
     DEPLOY_MAAS: "yes"
+    DEPLOY_IRONIC: "no"
     DEPLOY_TELEGRAF: "NO"
     DEPLOY_INFLUX: "NO"
+    TRIGGER_PR_PHRASE_ONLY: false
     # TEMPLATE
     name: 'RPC-AIO_{series}-{image}-{action}-{scenario}-{ztrigger}'
     project-type: workflow
@@ -219,6 +244,7 @@
           DEPLOY_CEPH: "{DEPLOY_CEPH}"
           DEPLOY_ELK: "{DEPLOY_ELK}"
           DEPLOY_MAAS: "{DEPLOY_MAAS}"
+          DEPLOY_IRONIC: "{DEPLOY_IRONIC}"
           USER_VARS: |
             {CONTEXT_USER_VARS}
             {SERIES_USER_VARS}
@@ -263,7 +289,7 @@
             - rcbops
           github-hooks: true
           trigger-phrase: '.*recheck_cit_all.*|.*recheck_cit_{image}_{action}_{scenario}.*'
-          only-trigger-phrase: false
+          only-trigger-phrase: "{obj:TRIGGER_PR_PHRASE_ONLY}"
           white-list-target-branches:
             - "{branches}"
           auth-id: "github_account_rpc_jenkins_svc"
@@ -313,6 +339,7 @@
                   "DEPLOY_SWIFT=${{DEPLOY_SWIFT}}",
                   "DEPLOY_CEPH=${{DEPLOY_CEPH}}",
                   "DEPLOY_ELK=${{DEPLOY_ELK}}",
+                  "DEPLOY_IRONIC=${{DEPLOY_IRONIC}}",
                   ]
                 aio_prepare.prepare()
                 deploy.deploy_sh(environment_vars: environment_vars)
